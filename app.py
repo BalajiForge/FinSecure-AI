@@ -1,51 +1,15 @@
-"""
-FinSecure AI
-Unified Zero-Trust Enterprise Financial & Decision Agent
-
-Team: Neural Nomads
-Team Leader: A. Balaji
-Members:
-K. Anish
-A. Sanjay
-Jeevan Raj
-Ashrith
-"""
-
-import logging
-import re
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
-
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+from typing import Dict, Any, List
+from datetime import datetime
+import re
+
+app = FastAPI(title="FinSecure AI")
 
 
 # =========================================================
-# LOGGING
-# =========================================================
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
-
-logger = logging.getLogger("FinSecure")
-
-
-# =========================================================
-# FASTAPI APPLICATION
-# =========================================================
-
-app = FastAPI(
-    title="FinSecure AI",
-    description="Unified Zero-Trust Enterprise Financial & Decision Agent",
-    version="1.0.0"
-)
-
-
-# =========================================================
-# CLEARANCE LEVELS
+# ZERO-TRUST CLEARANCE LEVELS
 # =========================================================
 
 CLEARANCE_RANKS = {
@@ -57,29 +21,23 @@ CLEARANCE_RANKS = {
 
 
 # =========================================================
-# DEMO FINANCIAL PROFILES
+# DEMO FINANCIAL USERS
 # =========================================================
 
-PROFILES = {
-
+USERS = {
     "U102": {
-        "name": "User 102",
         "clearance": "CONFIDENTIAL",
         "income": 85000,
         "savings": 250000,
         "monthly_expenses": 42000
     },
-
     "U205": {
-        "name": "User 205",
         "clearance": "INTERNAL",
         "income": 55000,
         "savings": 100000,
         "monthly_expenses": 35000
     },
-
     "U301": {
-        "name": "User 301",
         "clearance": "RESTRICTED",
         "income": 120000,
         "savings": 500000,
@@ -95,1697 +53,724 @@ PROFILES = {
 AUDIT_LOG: List[Dict[str, Any]] = []
 
 
-def add_audit_log(
-    action: str,
-    user_id: Optional[str],
-    result: str,
-    details: Optional[Dict[str, Any]] = None
-):
-
-    entry = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "action": action,
-        "user_id": user_id,
-        "result": result,
-        "details": details or {}
-    }
-
-    AUDIT_LOG.append(entry)
-
-    logger.info(
-        "%s | user=%s | result=%s",
-        action,
-        user_id,
-        result
-    )
-
-
-# =========================================================
-# FINSECURE AI AGENT
-# =========================================================
-
-class FinSecureAgent:
-
-    def __init__(self):
-
-        self.profiles = PROFILES
-
-
-    # =====================================================
-    # ZERO-TRUST AUTHORIZATION
-    # =====================================================
-
-    def authorize(
-        self,
-        user_id: str,
-        required_clearance: str = "CONFIDENTIAL"
-    ) -> bool:
-
-        if user_id not in self.profiles:
-
-            add_audit_log(
-                "AUTHORIZATION",
-                user_id,
-                "DENIED",
-                {
-                    "reason": "Unknown user"
-                }
-            )
-
-            return False
-
-        user_clearance = self.profiles[user_id]["clearance"]
-
-        user_rank = CLEARANCE_RANKS.get(
-            user_clearance,
-            -1
-        )
-
-        required_rank = CLEARANCE_RANKS.get(
-            required_clearance,
-            999
-        )
-
-        authorized = user_rank >= required_rank
-
-        add_audit_log(
-            "AUTHORIZATION",
-            user_id,
-            "GRANTED" if authorized else "DENIED",
-            {
-                "user_clearance": user_clearance,
-                "required_clearance": required_clearance
-            }
-        )
-
-        return authorized
-
-
-    # =====================================================
-    # CONFLICT RESOLUTION
-    # =====================================================
-
-    def resolve_conflicts(
-        self,
-        values: Dict[str, Any]
-    ) -> Dict[str, Any]:
-
-        resolved = {}
-
-        for key, value in values.items():
-
-            if isinstance(value, list) and value:
-
-                resolved[key] = value[-1]
-
-            else:
-
-                resolved[key] = value
-
-        return resolved
-
-
-    # =====================================================
-    # EXTRACT PURCHASE AMOUNT
-    # =====================================================
-
-    def extract_amount(
-        self,
-        prompt: str
-    ) -> int:
-
-        patterns = [
-
-            r"₹\s*([\d,]+)",
-
-            r"rs\.?\s*([\d,]+)",
-
-            r"inr\s*([\d,]+)",
-
-            r"\b([\d,]+)\s*(?:rupees|rs)\b"
-
-        ]
-
-        for pattern in patterns:
-
-            match = re.search(
-                pattern,
-                prompt.lower()
-            )
-
-            if match:
-
-                try:
-
-                    return int(
-                        match.group(1)
-                        .replace(",", "")
-                    )
-
-                except ValueError:
-
-                    pass
-
-
-        # Fallback:
-        # find a reasonably large number
-
-        numbers = re.findall(
-            r"\b\d[\d,]*\b",
-            prompt
-        )
-
-        for number in numbers:
-
-            try:
-
-                value = int(
-                    number.replace(",", "")
-                )
-
-                if value >= 1000:
-
-                    return value
-
-            except ValueError:
-
-                continue
-
-        return 0
-
-
-    # =====================================================
-    # FINANCIAL ANALYSIS
-    # =====================================================
-
-    def analyze_finances(
-        self,
-        user_id: str,
-        prompt: str
-    ) -> Dict[str, Any]:
-
-        profile = self.profiles[user_id]
-
-        income = profile["income"]
-
-        savings = profile["savings"]
-
-        expenses = profile["monthly_expenses"]
-
-        disposable_income = income - expenses
-
-        purchase_amount = self.extract_amount(prompt)
-
-        emergency_reserve = expenses * 3
-
-
-        # -------------------------------------------------
-        # NO PURCHASE AMOUNT
-        # -------------------------------------------------
-
-        if purchase_amount <= 0:
-
-            decision = "NEEDS MORE INFORMATION"
-
-            reason = (
-                "Please provide the purchase amount. "
-                "For example: Can I afford a ₹50000 laptop?"
-            )
-
-            risk_score = 50
-
-
-        # -------------------------------------------------
-        # INSUFFICIENT EMERGENCY RESERVE
-        # -------------------------------------------------
-
-        elif (
-            savings - purchase_amount
-            < emergency_reserve
-        ):
-
-            decision = "NOT RECOMMENDED"
-
-            remaining_savings = (
-                savings - purchase_amount
-            )
-
-            shortage = (
-                emergency_reserve
-                - remaining_savings
-            )
-
-            risk_score = min(
-                100,
-                max(
-                    50,
-                    int(
-                        (
-                            shortage
-                            / emergency_reserve
-                        ) * 100
-                    )
-                )
-            )
-
-            reason = (
-                "The purchase would reduce the user's "
-                "savings below the calculated three-month "
-                "emergency reserve."
-            )
-
-
-        # -------------------------------------------------
-        # AFFORDABLE
-        # -------------------------------------------------
-
-        elif purchase_amount <= disposable_income * 3:
-
-            decision = "APPROVED"
-
-            risk_score = 20
-
-            reason = (
-                "The purchase is within the user's "
-                "calculated financial capacity while "
-                "maintaining the emergency reserve."
-            )
-
-
-        # -------------------------------------------------
-        # HIGH RISK
-        # -------------------------------------------------
-
-        else:
-
-            decision = "HIGH RISK"
-
-            risk_score = 70
-
-            reason = (
-                "The purchase is relatively large compared "
-                "with the user's available disposable income."
-            )
-
-
-        return {
-
-            "purchase_amount": purchase_amount,
-
-            "income": income,
-
-            "savings": savings,
-
-            "monthly_expenses": expenses,
-
-            "disposable_income": disposable_income,
-
-            "emergency_reserve": emergency_reserve,
-
-            "decision": decision,
-
-            "risk_score": risk_score,
-
-            "reason": reason
-        }
-
-
-    # =====================================================
-    # MAIN QUERY PROCESSOR
-    # =====================================================
-
-    def process_query(
-        self,
-        user_id: str,
-        prompt: str
-    ) -> Dict[str, Any]:
-
-        # -------------------------------------------------
-        # USER VALIDATION
-        # -------------------------------------------------
-
-        if user_id not in self.profiles:
-
-            add_audit_log(
-                "QUERY",
-                user_id,
-                "DENIED",
-                {
-                    "reason": "Unknown user"
-                }
-            )
-
-            return {
-
-                "success": False,
-
-                "decision": "ACCESS DENIED",
-
-                "reason": (
-                    "The supplied user ID does not "
-                    "exist in the FinSecure system."
-                )
-            }
-
-
-        # -------------------------------------------------
-        # ZERO-TRUST AUTHORIZATION
-        # -------------------------------------------------
-
-        if not self.authorize(
-            user_id,
-            "CONFIDENTIAL"
-        ):
-
-            return {
-
-                "success": False,
-
-                "decision": "ACCESS DENIED",
-
-                "risk_score": 100,
-
-                "reason": (
-                    "Zero-Trust authorization failed. "
-                    "The user's clearance level is "
-                    "insufficient to access confidential "
-                    "financial information."
-                ),
-
-                "security": {
-
-                    "zero_trust": "ACTIVE",
-
-                    "authorization": "DENIED",
-
-                    "data_access": "BLOCKED"
-
-                }
-
-            }
-
-
-        # -------------------------------------------------
-        # FINANCIAL ANALYSIS
-        # -------------------------------------------------
-
-        analysis = self.analyze_finances(
-            user_id,
-            prompt
-        )
-
-
-        result = {
-
-            "success": True,
-
-            "user_id": user_id,
-
-            "user_name":
-                self.profiles[user_id]["name"],
-
-            "clearance":
-                self.profiles[user_id]["clearance"],
-
-            "decision":
-                analysis["decision"],
-
-            "risk_score":
-                analysis["risk_score"],
-
-            "reason":
-                analysis["reason"],
-
-            "financial_summary": {
-
-                "income":
-                    analysis["income"],
-
-                "savings":
-                    analysis["savings"],
-
-                "monthly_expenses":
-                    analysis["monthly_expenses"],
-
-                "disposable_income":
-                    analysis["disposable_income"],
-
-                "emergency_reserve":
-                    analysis["emergency_reserve"],
-
-                "purchase_amount":
-                    analysis["purchase_amount"]
-
-            },
-
-            "security": {
-
-                "zero_trust":
-                    "ACTIVE",
-
-                "authorization":
-                    "GRANTED",
-
-                "data_access":
-                    "AUTHORIZED"
-
-            }
-
-        }
-
-
-        # -------------------------------------------------
-        # AUDIT
-        # -------------------------------------------------
-
-        add_audit_log(
-            "FINANCIAL_DECISION",
-            user_id,
-            analysis["decision"],
-            {
-                "purchase_amount":
-                    analysis["purchase_amount"],
-
-                "risk_score":
-                    analysis["risk_score"]
-            }
-        )
-
-
-        return result
-
-
-# =========================================================
-# CREATE AGENT
-# =========================================================
-
-agent = FinSecureAgent()
-
-
 # =========================================================
 # REQUEST MODEL
 # =========================================================
 
 class QueryRequest(BaseModel):
-
-    user_id: str = Field(
-        ...,
-        description="FinSecure user ID"
-    )
-
-    prompt: str = Field(
-        ...,
-        min_length=1,
-        description="Financial question"
-    )
+    user_id: str
+    prompt: str
 
 
 # =========================================================
-# FRONTEND HTML
+# ZERO-TRUST AUTHORIZATION
 # =========================================================
 
-HTML_PAGE = r"""
+def authorize_user(user_id: str) -> Dict[str, Any]:
+
+    if user_id not in USERS:
+        AUDIT_LOG.append({
+            "timestamp": datetime.now().isoformat(),
+            "user_id": user_id,
+            "action": "ACCESS_DENIED",
+            "reason": "Unknown user"
+        })
+
+        raise HTTPException(
+            status_code=403,
+            detail="Unauthorized user"
+        )
+
+    user = USERS[user_id]
+
+    clearance = user["clearance"]
+
+    if CLEARANCE_RANKS[clearance] < CLEARANCE_RANKS["CONFIDENTIAL"]:
+
+        AUDIT_LOG.append({
+            "timestamp": datetime.now().isoformat(),
+            "user_id": user_id,
+            "action": "ACCESS_DENIED",
+            "reason": "Insufficient clearance"
+        })
+
+        raise HTTPException(
+            status_code=403,
+            detail="Insufficient clearance level"
+        )
+
+    AUDIT_LOG.append({
+        "timestamp": datetime.now().isoformat(),
+        "user_id": user_id,
+        "action": "ACCESS_GRANTED",
+        "clearance": clearance
+    })
+
+    return user
+
+
+# =========================================================
+# EXTRACT PURCHASE AMOUNT
+# =========================================================
+
+def extract_amount(prompt: str) -> float:
+
+    patterns = [
+        r"₹\s*([\d,]+(?:\.\d+)?)",
+        r"Rs\.?\s*([\d,]+(?:\.\d+)?)",
+        r"rupees?\s*([\d,]+(?:\.\d+)?)",
+        r"\$\s*([\d,]+(?:\.\d+)?)"
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, prompt, re.IGNORECASE)
+
+        if match:
+            return float(match.group(1).replace(",", ""))
+
+    numbers = re.findall(r"\b\d+(?:,\d+)*(?:\.\d+)?\b", prompt)
+
+    if numbers:
+        return float(numbers[0].replace(",", ""))
+
+    return 0
+
+
+# =========================================================
+# FINANCIAL ANALYSIS
+# =========================================================
+
+def analyze_finances(
+    user: Dict[str, Any],
+    purchase_amount: float
+) -> Dict[str, Any]:
+
+    income = user["income"]
+    savings = user["savings"]
+    expenses = user["monthly_expenses"]
+
+    disposable_income = income - expenses
+
+    emergency_reserve = expenses * 3
+
+    remaining_savings = savings - purchase_amount
+
+    if remaining_savings < emergency_reserve:
+
+        decision = "NOT RECOMMENDED"
+
+        reason = (
+            "The purchase would reduce savings below the "
+            "recommended three-month emergency reserve."
+        )
+
+        risk_score = 85
+
+    elif purchase_amount <= disposable_income * 3:
+
+        decision = "APPROVED"
+
+        reason = (
+            "The purchase is within the user's estimated "
+            "financial capacity while maintaining the emergency reserve."
+        )
+
+        risk_score = 20
+
+    else:
+
+        decision = "HIGH RISK"
+
+        reason = (
+            "The purchase is large compared with the user's "
+            "available disposable income."
+        )
+
+        risk_score = 70
+
+    return {
+        "decision": decision,
+        "reason": reason,
+        "risk_score": risk_score,
+        "income": income,
+        "savings": savings,
+        "monthly_expenses": expenses,
+        "disposable_income": disposable_income,
+        "emergency_reserve": emergency_reserve,
+        "purchase_amount": purchase_amount,
+        "remaining_savings": remaining_savings
+    }
+
+
+# =========================================================
+# CONFLICT RESOLUTION
+# =========================================================
+
+def resolve_conflict(prompt: str) -> str:
+
+    positive_words = [
+        "afford",
+        "buy",
+        "purchase",
+        "good",
+        "okay",
+        "yes"
+    ]
+
+    risk_words = [
+        "debt",
+        "loan",
+        "emergency",
+        "risk",
+        "danger",
+        "borrow"
+    ]
+
+    lower_prompt = prompt.lower()
+
+    has_positive = any(word in lower_prompt for word in positive_words)
+
+    has_risk = any(word in lower_prompt for word in risk_words)
+
+    if has_positive and has_risk:
+        return (
+            "Safety rules take priority because the request "
+            "contains conflicting financial-risk signals."
+        )
+
+    return ""
+
+
+# =========================================================
+# FRONTEND
+# =========================================================
+
+HTML_PAGE = """
 <!DOCTYPE html>
-
 <html lang="en">
 
 <head>
 
 <meta charset="UTF-8">
 
-<meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
->
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <title>FinSecure AI</title>
 
-
 <style>
 
-/* =====================================================
-   RESET
-   ===================================================== */
-
 * {
-
     margin: 0;
-
     padding: 0;
-
     box-sizing: border-box;
-
 }
-
-
-/* =====================================================
-   BODY
-   ===================================================== */
 
 body {
-
-    font-family:
-        Inter,
-        Arial,
-        Helvetica,
-        sans-serif;
-
-    background:
-        radial-gradient(
-            circle at top left,
-            #172554,
-            #080d1c 45%,
-            #050811
-        );
-
+    font-family: Arial, Helvetica, sans-serif;
+    background: #07111f;
     color: #ffffff;
-
     min-height: 100vh;
-
 }
-
-
-/* =====================================================
-   HEADER
-   ===================================================== */
-
-header {
-
-    height: 72px;
-
-    display: flex;
-
-    justify-content: space-between;
-
-    align-items: center;
-
-    padding:
-        0 7%;
-
-    border-bottom:
-        1px solid
-        rgba(255,255,255,0.08);
-
-    background:
-        rgba(5,8,17,0.65);
-
-    backdrop-filter:
-        blur(12px);
-
-}
-
-
-.logo {
-
-    font-size: 23px;
-
-    font-weight: 800;
-
-}
-
-
-.logo span {
-
-    color: #4ade80;
-
-}
-
-
-.security-badge {
-
-    display: flex;
-
-    align-items: center;
-
-    gap: 8px;
-
-    padding:
-        7px 13px;
-
-    border:
-        1px solid
-        rgba(74,222,128,0.35);
-
-    border-radius: 30px;
-
-    color: #86efac;
-
-    font-size: 12px;
-
-    font-weight: 700;
-
-}
-
-
-.dot {
-
-    width: 8px;
-
-    height: 8px;
-
-    border-radius: 50%;
-
-    background: #4ade80;
-
-    box-shadow:
-        0 0 10px
-        #4ade80;
-
-}
-
-
-/* =====================================================
-   CONTAINER
-   ===================================================== */
 
 .container {
-
     width: 90%;
-
-    max-width: 1000px;
-
+    max-width: 1150px;
     margin: auto;
-
-    padding:
-        65px 0 45px;
-
 }
 
+/* HEADER */
 
-/* =====================================================
-   HERO
-   ===================================================== */
+header {
+    border-bottom: 1px solid #1d3447;
+    padding: 22px 0;
+}
+
+.nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.logo {
+    font-size: 24px;
+    font-weight: bold;
+}
+
+.logo span {
+    color: #22c55e;
+}
+
+.status {
+    background: rgba(34,197,94,0.12);
+    color: #4ade80;
+    padding: 8px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+}
+
+/* HERO */
 
 .hero {
-
     text-align: center;
-
-    margin-bottom: 45px;
-
+    padding: 70px 20px 40px;
 }
-
-
-.hero-tag {
-
-    display: inline-block;
-
-    padding:
-        7px 14px;
-
-    border-radius: 30px;
-
-    background:
-        rgba(74,222,128,0.08);
-
-    color: #86efac;
-
-    font-size: 12px;
-
-    font-weight: 700;
-
-    margin-bottom: 18px;
-
-}
-
 
 .hero h1 {
-
-    font-size:
-        clamp(38px, 7vw, 66px);
-
-    line-height: 1.05;
-
-    letter-spacing: -2px;
-
-    margin-bottom: 18px;
-
+    font-size: 48px;
+    margin-bottom: 15px;
 }
-
 
 .hero h1 span {
-
-    color: #4ade80;
-
+    color: #22c55e;
 }
-
 
 .hero p {
-
-    color: #94a3b8;
-
-    font-size: 17px;
-
-    max-width: 650px;
-
-    margin: auto;
-
-    line-height: 1.6;
-
+    color: #9fb0c0;
+    font-size: 18px;
 }
 
-
-/* =====================================================
-   CARD
-   ===================================================== */
+/* MAIN CARD */
 
 .card {
-
-    background:
-        rgba(15,23,42,0.82);
-
-    border:
-        1px solid
-        rgba(255,255,255,0.09);
-
-    border-radius: 20px;
-
+    background: #0c1b2a;
+    border: 1px solid #1d3447;
+    border-radius: 18px;
     padding: 30px;
-
-    box-shadow:
-        0 25px 70px
-        rgba(0,0,0,0.25);
-
-    margin-bottom: 24px;
-
+    margin-top: 25px;
 }
 
-
-.card-title {
-
-    font-size: 21px;
-
-    margin-bottom: 23px;
-
+.card h2 {
+    margin-bottom: 8px;
 }
 
+.subtitle {
+    color: #8da0b2;
+    margin-bottom: 25px;
+}
+
+/* FORM */
 
 label {
-
     display: block;
-
-    color: #cbd5e1;
-
-    font-size: 14px;
-
-    font-weight: 600;
-
     margin-bottom: 8px;
-
+    color: #cbd5e1;
+    font-weight: bold;
 }
-
 
 select,
 textarea {
-
     width: 100%;
-
-    border:
-        1px solid
-        #334155;
-
-    background:
-        #080d1c;
-
+    background: #07111f;
+    border: 1px solid #29445a;
     color: white;
-
-    border-radius: 11px;
-
+    border-radius: 10px;
     padding: 14px;
-
-    outline: none;
-
     font-size: 15px;
-
     margin-bottom: 20px;
-
 }
-
-
-select:focus,
-textarea:focus {
-
-    border-color: #4ade80;
-
-    box-shadow:
-        0 0 0 3px
-        rgba(74,222,128,0.08);
-
-}
-
 
 textarea {
-
     min-height: 120px;
-
     resize: vertical;
-
 }
-
 
 button {
-
     width: 100%;
-
-    border: none;
-
-    border-radius: 11px;
-
     padding: 15px;
-
-    background: #4ade80;
-
-    color: #052e16;
-
-    font-size: 15px;
-
-    font-weight: 800;
-
+    border: none;
+    border-radius: 10px;
+    background: #22c55e;
+    color: #04100a;
+    font-size: 16px;
+    font-weight: bold;
     cursor: pointer;
-
-    transition: 0.2s;
-
 }
-
 
 button:hover {
-
-    transform:
-        translateY(-1px);
-
-    box-shadow:
-        0 10px 30px
-        rgba(74,222,128,0.15);
-
+    background: #4ade80;
 }
 
-
-button:disabled {
-
-    opacity: 0.55;
-
-    cursor: not-allowed;
-
-}
-
-
-/* =====================================================
-   RESULT
-   ===================================================== */
+/* RESULT */
 
 .result {
-
     display: none;
-
     margin-top: 25px;
-
-    border:
-        1px solid
-        rgba(74,222,128,0.20);
-
-    border-radius: 16px;
-
+    background: #07111f;
+    border: 1px solid #29445a;
+    border-radius: 15px;
     padding: 25px;
-
-    background:
-        rgba(4,12,25,0.8);
-
 }
-
-
-.result-header {
-
-    display: flex;
-
-    justify-content: space-between;
-
-    align-items: center;
-
-    gap: 15px;
-
-    margin-bottom: 20px;
-
-}
-
-
-.result-header h2 {
-
-    font-size: 19px;
-
-}
-
-
-.auth {
-
-    font-size: 11px;
-
-    color: #86efac;
-
-    border:
-        1px solid
-        rgba(74,222,128,0.3);
-
-    padding:
-        5px 9px;
-
-    border-radius: 20px;
-
-}
-
 
 .decision {
-
     font-size: 30px;
-
-    font-weight: 900;
-
-    margin-bottom: 8px;
-
+    font-weight: bold;
+    color: #4ade80;
+    margin-bottom: 12px;
 }
-
 
 .reason {
-
-    color: #a8b3c7;
-
+    color: #b5c4d1;
     line-height: 1.6;
-
-    margin-bottom: 20px;
-
+    margin-bottom: 25px;
 }
-
 
 .stats {
-
     display: grid;
-
-    grid-template-columns:
-        repeat(3, 1fr);
-
-    gap: 12px;
-
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
 }
-
 
 .stat {
-
-    padding: 16px;
-
-    border:
-        1px solid
-        rgba(255,255,255,0.07);
-
+    background: #0c1b2a;
+    padding: 18px;
     border-radius: 12px;
-
-    background:
-        rgba(255,255,255,0.025);
-
+    border: 1px solid #1d3447;
 }
 
-
-.stat-label {
-
-    color: #64748b;
-
-    font-size: 11px;
-
-    text-transform: uppercase;
-
-    margin-bottom: 6px;
-
+.stat-title {
+    color: #8195a7;
+    font-size: 12px;
+    margin-bottom: 8px;
 }
-
 
 .stat-value {
-
-    font-size: 18px;
-
-    font-weight: 800;
-
+    font-size: 20px;
+    font-weight: bold;
 }
 
+/* FEATURES */
 
-/* =====================================================
-   SECURITY SECTION
-   ===================================================== */
-
-.security-grid {
-
+.features {
     display: grid;
-
-    grid-template-columns:
-        repeat(3, 1fr);
-
-    gap: 14px;
-
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    margin: 40px 0 70px;
 }
 
-
-.security-item {
-
-    padding: 18px;
-
-    border:
-        1px solid
-        rgba(255,255,255,0.07);
-
-    border-radius: 13px;
-
-}
-
-
-.security-icon {
-
-    font-size: 22px;
-
-    margin-bottom: 10px;
-
-}
-
-
-.security-item h3 {
-
-    font-size: 15px;
-
-    margin-bottom: 7px;
-
-}
-
-
-.security-item p {
-
-    color: #8190a8;
-
-    font-size: 13px;
-
-    line-height: 1.5;
-
-}
-
-
-/* =====================================================
-   FOOTER
-   ===================================================== */
-
-footer {
-
-    text-align: center;
-
-    color: #475569;
-
+.feature {
+    background: #0c1b2a;
+    border: 1px solid #1d3447;
+    border-radius: 15px;
     padding: 25px;
-
-    font-size: 12px;
-
 }
 
+.feature h3 {
+    margin-bottom: 10px;
+    color: #4ade80;
+}
 
-/* =====================================================
-   MOBILE
-   ===================================================== */
+.feature p {
+    color: #8da0b2;
+    line-height: 1.5;
+}
 
-@media (max-width: 650px) {
+/* RESPONSIVE */
 
-    header {
+@media (max-width: 800px) {
 
-        padding:
-            0 5%;
-
+    .hero h1 {
+        font-size: 36px;
     }
 
-    .security-badge {
-
-        font-size: 10px;
-
+    .stats {
+        grid-template-columns: repeat(2, 1fr);
     }
 
-    .container {
-
-        width: 92%;
-
-        padding-top: 40px;
-
-    }
-
-    .card {
-
-        padding: 20px;
-
-    }
-
-    .stats,
-    .security-grid {
-
+    .features {
         grid-template-columns: 1fr;
-
     }
-
-    .result-header {
-
-        align-items: flex-start;
-
-        flex-direction: column;
-
-    }
-
 }
 
 </style>
 
 </head>
 
-
 <body>
-
-
-<!-- =====================================================
-     HEADER
-     ===================================================== -->
 
 <header>
 
-    <div class="logo">
-        Fin<span>Secure</span> AI
-    </div>
+<div class="container nav">
 
-    <div class="security-badge">
+<div class="logo">
+Fin<span>Secure</span> AI
+</div>
 
-        <div class="dot"></div>
+<div class="status">
+● ZERO-TRUST ACTIVE
+</div>
 
-        ZERO-TRUST ACTIVE
-
-    </div>
+</div>
 
 </header>
 
 
-<!-- =====================================================
-     MAIN
-     ===================================================== -->
-
 <main class="container">
 
+<section class="hero">
 
-    <!-- HERO -->
+<h1>
+Intelligent <span>Financial Decisions.</span>
+</h1>
 
-    <section class="hero">
+<p>
+Secure. Explainable. Zero-Trust powered.
+</p>
 
-        <div class="hero-tag">
-            NEURAL NOMADS · FINANCIAL AI
-        </div>
+</section>
 
-        <h1>
 
-            Intelligent Financial
+<section class="card">
 
-            <br>
+<h2>Financial Decision Agent</h2>
 
-            <span>Decision Agent</span>
+<p class="subtitle">
+Ask FinSecure AI whether a financial decision is safe.
+</p>
 
-        </h1>
 
-        <p>
+<label for="user">
+Select User
+</label>
 
-            Analyze financial decisions using
-            Zero-Trust authorization, risk analysis,
-            and explainable decision making.
+<select id="user">
 
-        </p>
+<option value="U102">
+U102 — Confidential
+</option>
 
-    </section>
+<option value="U205">
+U205 — Internal
+</option>
 
+<option value="U301">
+U301 — Restricted
+</option>
 
-    <!-- QUERY CARD -->
+</select>
 
-    <section class="card">
 
-        <div class="card-title">
-            Ask FinSecure AI
-        </div>
+<label for="question">
+Financial Question
+</label>
 
+<textarea
+id="question"
+placeholder="Example: Can I buy a laptop for ₹80000?"
+></textarea>
 
-        <label for="userId">
-            Select User
-        </label>
 
+<button onclick="analyze()">
+ANALYZE DECISION
+</button>
 
-        <select id="userId">
 
-            <option value="U102">
-                U102 — Confidential
-            </option>
+<div class="result" id="result">
 
-            <option value="U205">
-                U205 — Internal
-            </option>
+<div class="decision" id="decision">
+</div>
 
-            <option value="U301">
-                U301 — Restricted
-            </option>
+<div class="reason" id="reason">
+</div>
 
-        </select>
 
+<div class="stats">
 
-        <label for="prompt">
-            Financial Question
-        </label>
+<div class="stat">
 
+<div class="stat-title">
+RISK SCORE
+</div>
 
-        <textarea
-            id="prompt"
-            placeholder="Example: Can I afford a ₹50000 laptop?"
-        ></textarea>
+<div class="stat-value" id="risk">
+-
+</div>
 
+</div>
 
-        <button
-            id="analyzeBtn"
-            onclick="analyze()"
-        >
 
-            Analyze Financial Decision
+<div class="stat">
 
-        </button>
+<div class="stat-title">
+SAVINGS
+</div>
 
+<div class="stat-value" id="savings">
+-
+</div>
 
-        <!-- RESULT -->
+</div>
 
-        <div
-            id="result"
-            class="result"
-        >
 
-            <div class="result-header">
+<div class="stat">
 
-                <h2>
-                    FinSecure Decision
-                </h2>
+<div class="stat-title">
+DISPOSABLE INCOME
+</div>
 
-                <div
-                    id="auth"
-                    class="auth"
-                >
-                    AUTHORIZED
-                </div>
+<div class="stat-value" id="income">
+-
+</div>
 
-            </div>
+</div>
 
 
-            <div
-                id="decision"
-                class="decision"
-            >
-                -
-            </div>
+<div class="stat">
 
+<div class="stat-title">
+REMAINING SAVINGS
+</div>
 
-            <div
-                id="reason"
-                class="reason"
-            >
-            </div>
+<div class="stat-value" id="remaining">
+-
+</div>
 
+</div>
 
-            <div class="stats">
+</div>
 
+</div>
 
-                <div class="stat">
+</section>
 
-                    <div class="stat-label">
-                        Risk Score
-                    </div>
 
-                    <div
-                        id="risk"
-                        class="stat-value"
-                    >
-                        -
-                    </div>
+<section class="features">
 
-                </div>
+<div class="feature">
 
+<h3>Zero-Trust</h3>
 
-                <div class="stat">
+<p>
+Every request is authenticated and authorized before
+financial information is accessed.
+</p>
 
-                    <div class="stat-label">
-                        Savings
-                    </div>
+</div>
 
-                    <div
-                        id="savings"
-                        class="stat-value"
-                    >
-                        -
-                    </div>
 
-                </div>
+<div class="feature">
 
+<h3>Risk Analysis</h3>
 
-                <div class="stat">
+<p>
+The system evaluates income, expenses, savings,
+emergency reserves and purchase amount.
+</p>
 
-                    <div class="stat-label">
-                        Disposable Income
-                    </div>
+</div>
 
-                    <div
-                        id="disposable"
-                        class="stat-value"
-                    >
-                        -
-                    </div>
 
-                </div>
+<div class="feature">
 
+<h3>Audit Trail</h3>
 
-            </div>
+<p>
+Important authorization and decision events are
+recorded for transparency.
+</p>
 
-        </div>
+</div>
 
-    </section>
-
-
-    <!-- HOW IT WORKS -->
-
-    <section class="card">
-
-        <div class="card-title">
-            How FinSecure Works
-        </div>
-
-
-        <div class="security-grid">
-
-
-            <div class="security-item">
-
-                <div class="security-icon">
-                    🔐
-                </div>
-
-                <h3>
-                    Zero-Trust
-                </h3>
-
-                <p>
-
-                    Every request is authenticated
-                    and checked against the user's
-                    clearance level.
-
-                </p>
-
-            </div>
-
-
-            <div class="security-item">
-
-                <div class="security-icon">
-                    📊
-                </div>
-
-                <h3>
-                    Risk Analysis
-                </h3>
-
-                <p>
-
-                    Income, savings, expenses and
-                    purchase amount are evaluated
-                    before making a decision.
-
-                </p>
-
-            </div>
-
-
-            <div class="security-item">
-
-                <div class="security-icon">
-                    📝
-                </div>
-
-                <h3>
-                    Audit Trail
-                </h3>
-
-                <p>
-
-                    Important authorization and
-                    decision events are recorded
-                    for accountability.
-
-                </p>
-
-            </div>
-
-
-        </div>
-
-    </section>
-
+</section>
 
 </main>
 
-
-<!-- =====================================================
-     FOOTER
-     ===================================================== -->
-
-<footer>
-
-    Neural Nomads · FinSecure AI · Hackathon 2026
-
-</footer>
-
-
-<!-- =====================================================
-     JAVASCRIPT
-     ===================================================== -->
 
 <script>
 
 async function analyze() {
 
-
-    const userId =
-        document.getElementById(
-            "userId"
-        ).value;
-
+    const user_id =
+        document.getElementById("user").value;
 
     const prompt =
-        document.getElementById(
-            "prompt"
-        ).value.trim();
+        document.getElementById("question").value;
 
+    if (!prompt.trim()) {
 
-    const button =
-        document.getElementById(
-            "analyzeBtn"
-        );
-
-
-    const result =
-        document.getElementById(
-            "result"
-        );
-
-
-    if (!prompt) {
-
-        alert(
-            "Please enter a financial question."
-        );
+        alert("Please enter a financial question.");
 
         return;
-
     }
 
 
+    const button =
+        document.querySelector("button");
+
+    button.innerText = "ANALYZING...";
+
     button.disabled = true;
-
-    button.innerText =
-        "Analyzing...";
-
-
-    result.style.display =
-        "block";
-
-
-    document.getElementById(
-        "decision"
-    ).innerText =
-        "PROCESSING";
-
-
-    document.getElementById(
-        "reason"
-    ).innerText =
-        "Checking Zero-Trust authorization and analyzing financial data...";
 
 
     try {
 
+        const response = await fetch("/query", {
 
-        const response =
-            await fetch(
-                "/query",
-                {
+            method: "POST",
 
-                    method:
-                        "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
 
-                    headers:
-                        {
-                            "Content-Type":
-                                "application/json"
-                        },
+            body: JSON.stringify({
+                user_id: user_id,
+                prompt: prompt
+            })
 
-                    body:
-                        JSON.stringify(
-                            {
-                                user_id:
-                                    userId,
-
-                                prompt:
-                                    prompt
-                            }
-                        )
-
-                }
-            );
+        });
 
 
-        const data =
-            await response.json();
+        const data = await response.json();
 
 
         if (!response.ok) {
 
-            throw new Error(
-                data.detail ||
-                "Server request failed."
-            );
+            alert(data.detail || "Request failed.");
 
+            return;
         }
 
 
-        document.getElementById(
-            "decision"
-        ).innerText =
-            data.decision ||
-            "UNKNOWN";
+        document.getElementById("result").style.display = "block";
 
+        document.getElementById("decision").innerText =
+            data.decision;
 
-        document.getElementById(
-            "reason"
-        ).innerText =
-            data.reason ||
-            "No explanation available.";
+        document.getElementById("reason").innerText =
+            data.reason;
 
+        document.getElementById("risk").innerText =
+            data.risk_score + "/100";
 
-        document.getElementById(
-            "risk"
-        ).innerText =
-            (
-                data.risk_score ??
-                "-"
-            ) + "/100";
+        document.getElementById("savings").innerText =
+            "₹" + Number(data.savings).toLocaleString("en-IN");
 
+        document.getElementById("income").innerText =
+            "₹" + Number(data.disposable_income).toLocaleString("en-IN");
 
-        const summary =
-            data.financial_summary ||
-            {};
-
-
-        document.getElementById(
-            "savings"
-        ).innerText =
-            "₹" +
-            (
-                summary.savings ??
-                "-"
-            );
-
-
-        document.getElementById(
-            "disposable"
-        ).innerText =
-            "₹" +
-            (
-                summary.disposable_income ??
-                "-"
-            );
-
-
-        const auth =
-            document.getElementById(
-                "auth"
-            );
-
-
-        if (
-            data.security &&
-            data.security.authorization
-        ) {
-
-            auth.innerText =
-                data.security.authorization
-                    .toUpperCase();
-
-        }
-
+        document.getElementById("remaining").innerText =
+            "₹" + Number(data.remaining_savings).toLocaleString("en-IN");
 
     }
-
 
     catch (error) {
 
+        alert("Unable to connect to FinSecure AI.");
 
-        document.getElementById(
-            "decision"
-        ).innerText =
-            "ERROR";
-
-
-        document.getElementById(
-            "reason"
-        ).innerText =
-            error.message;
-
-
-        document.getElementById(
-            "risk"
-        ).innerText =
-            "-";
-
-
-        document.getElementById(
-            "savings"
-        ).innerText =
-            "-";
-
-
-        document.getElementById(
-            "disposable"
-        ).innerText =
-            "-";
+        console.error(error);
 
     }
 
-
     finally {
 
-        button.disabled =
-            false;
+        button.innerText = "ANALYZE DECISION";
 
-        button.innerText =
-            "Analyze Financial Decision";
+        button.disabled = false;
 
     }
 
 }
 
 </script>
-
 
 </body>
 
@@ -1797,11 +782,8 @@ async function analyze() {
 # ROOT PAGE
 # =========================================================
 
-@app.get(
-    "/",
-    response_class=HTMLResponse
-)
-def home():
+@app.get("/", response_class=HTMLResponse)
+def root():
 
     return HTML_PAGE
 
@@ -1814,76 +796,80 @@ def home():
 def health():
 
     return {
-
         "status": "online",
-
         "service": "FinSecure AI",
-
-        "team": "Neural Nomads",
-
-        "message":
-            "FinSecure AI is running successfully."
-
+        "team": "Neural Nomads"
     }
 
 
 # =========================================================
-# QUERY API
+# FINANCIAL QUERY
 # =========================================================
 
 @app.post("/query")
-def query(
-    request: QueryRequest
-):
+def query(request: QueryRequest):
 
-    try:
+    user = authorize_user(request.user_id)
 
-        return agent.process_query(
-            request.user_id,
-            request.prompt
+    amount = extract_amount(request.prompt)
+
+    if amount <= 0:
+
+        return {
+            "decision": "NEEDS MORE INFORMATION",
+            "reason": "Please provide the purchase amount.",
+            "risk_score": 0,
+            "savings": user["savings"],
+            "disposable_income":
+                user["income"] - user["monthly_expenses"],
+            "remaining_savings": user["savings"]
+        }
+
+
+    conflict_message = resolve_conflict(request.prompt)
+
+    result = analyze_finances(
+        user,
+        amount
+    )
+
+
+    if conflict_message:
+
+        result["reason"] = (
+            result["reason"] +
+            " " +
+            conflict_message
         )
 
-    except Exception as exc:
 
-        logger.exception(
-            "Query processing failed"
-        )
+    AUDIT_LOG.append({
 
-        raise HTTPException(
-            status_code=500,
-            detail=str(exc)
-        )
+        "timestamp": datetime.now().isoformat(),
+
+        "user_id": request.user_id,
+
+        "action": "FINANCIAL_ANALYSIS",
+
+        "purchase_amount": amount,
+
+        "decision": result["decision"],
+
+        "risk_score": result["risk_score"]
+
+    })
+
+
+    return result
 
 
 # =========================================================
-# AUDIT API
+# AUDIT ENDPOINT
 # =========================================================
 
 @app.get("/audit")
-def get_audit_logs():
+def audit():
 
     return {
-
-        "count":
-            len(AUDIT_LOG),
-
-        "logs":
-            AUDIT_LOG
-
+        "events": AUDIT_LOG
     }
-
-
-# =========================================================
-# LOCAL DEVELOPMENT
-# =========================================================
-
-if __name__ == "__main__":
-
-    import uvicorn
-
-    uvicorn.run(
-        "app:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True
-    )
