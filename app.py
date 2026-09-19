@@ -873,3 +873,7 @@ def audit():
     return {
         "events": AUDIT_LOG
     }
+
+@app.get("/", response_class=HTMLResponse)
+def root():
+    return HTML_PAGE
